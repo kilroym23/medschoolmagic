@@ -7,100 +7,179 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>">
-    <!-- IMPORTANT: use the correct PDF.js URL (no .mjs) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+    <!-- Use unpkg CDN – highly reliable -->
+    <script src="https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.min.js"></script>
     <style>
-        /* [Full CSS from earlier – I'll include a minimal one for brevity, but the complete styles should be in the final file] */
-        body { font-family: sans-serif; background: #f5f5f5; color: #222; padding: 16px; }
-        .btn { padding: 10px 18px; background: #3a0ca3; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 4px; }
-        .btn:hover { opacity: 0.9; }
-        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
-        input, select { padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 100%; margin-bottom: 8px; }
-        .error-msg { color: red; background: #ffe0e0; padding: 8px; border-radius: 6px; margin-top: 8px; display: none; }
+        :root {
+            --bg: #f5f3ef;
+            --surface: #ffffff;
+            --surface2: #faf9f7;
+            --border: #e0dcd5;
+            --text: #1a1a1a;
+            --text2: #5c5c5c;
+            --text3: #8a8a8a;
+            --accent: #3a0ca3;
+            --accent2: #4361ee;
+            --accent-light: #f0e6ff;
+            --gold: #f72585;
+            --red: #c0392b;
+            --red-light: #fdf0ee;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+            --radius: 12px;
+            --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a2e;
+                --surface: #16213e;
+                --surface2: #0f3460;
+                --border: #533483;
+                --text: #e8e8e8;
+                --text2: #b0b0b0;
+                --accent: #7209b7;
+                --accent2: #b5179e;
+                --accent-light: #240046;
+                --gold: #f72585;
+            }
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100vh; line-height:1.5; }
+        .app { max-width:960px; margin:0 auto; padding:16px; }
+        .btn { display:inline-flex; align-items:center; gap:6px; padding:10px 18px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; font-size:0.9rem; transition:0.2s; }
+        .btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+        .card { background:var(--surface); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); margin-bottom:16px; }
+        input, select, textarea { padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); width:100%; font-size:0.9rem; margin-bottom:8px; }
+        .error-msg { color: var(--red); background: var(--red-light); padding: 8px; border-radius: 6px; margin-top: 8px; display: none; }
+        .success-msg { color: #2e8b65; background: #e8f5ee; padding: 8px; border-radius: 6px; margin-top: 8px; }
     </style>
 </head>
 <body>
-    <h1>Med School Magic</h1>
+<div class="app">
+    <header style="display:flex; justify-content:space-between; margin-bottom:16px;">
+        <h1 class="logo">Med School <span style="color:var(--gold)">Magic</span></h1>
+    </header>
 
     <!-- UPLOAD SCREEN -->
-    <div id="upload-section">
-        <div class="card">
-            <h2>Upload & Generate</h2>
-            <input type="file" id="pdf-file-input" accept=".pdf">
-            <input type="password" id="api-key-input" placeholder="Gemini API key (AIza...)">
-            <select id="gen-count">
-                <option value="5">5 questions</option>
-                <option value="10" selected>10 questions</option>
-            </select>
-            <button class="btn" onclick="testClick()">Test Click</button>
-            <button class="btn" onclick="generateQuestions()">Generate</button>
-            <div id="status-message"></div>
-            <div class="error-msg" id="error-box"></div>
+    <div class="card">
+        <h2>📄 Upload & Generate Questions</h2>
+        <input type="file" id="pdf-file-input" accept=".pdf">
+        <input type="password" id="api-key-input" placeholder="Gemini API key (AIza...)">
+        <select id="gen-count">
+            <option value="5">5 questions</option>
+            <option value="10" selected>10 questions</option>
+        </select>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn btn-primary" onclick="generateQuestions()">Generate</button>
+            <button class="btn" onclick="testLibrary()">Test PDF.js</button>
         </div>
+        <div id="status-message" class="success-msg" style="display:none;"></div>
+        <div id="error-box" class="error-msg"></div>
     </div>
+</div>
 
-    <script>
-        // Simple test function
-        function testClick() {
-            alert('Button works!');
+<script>
+    // Small helper to wait until pdfjsLib is available (it may load asynchronously)
+    async function waitForPdfJs(maxWaitMs = 5000) {
+        if (typeof pdfjsLib !== 'undefined') return true;
+        const start = Date.now();
+        while (Date.now() - start < maxWaitMs) {
+            if (typeof pdfjsLib !== 'undefined') return true;
+            await new Promise(r => setTimeout(r, 200));
+        }
+        return false;
+    }
+
+    function testLibrary() {
+        if (typeof pdfjsLib !== 'undefined') {
+            alert('✅ PDF.js is loaded!');
+        } else {
+            alert('❌ PDF.js still not loaded. Try disabling ad blockers or use a different browser.');
+        }
+    }
+
+    async function generateQuestions() {
+        const statusEl = document.getElementById('status-message');
+        const errorBox = document.getElementById('error-box');
+        errorBox.style.display = 'none';
+        statusEl.style.display = 'none';
+
+        const fileInput = document.getElementById('pdf-file-input');
+        const file = fileInput.files[0];
+        const key = document.getElementById('api-key-input').value.trim();
+        const count = parseInt(document.getElementById('gen-count').value);
+
+        if (!file) {
+            errorBox.textContent = '❌ Please select a PDF file.';
+            errorBox.style.display = 'block';
+            return;
+        }
+        if (!key || !key.startsWith('AIza')) {
+            errorBox.textContent = '❌ Enter a valid Gemini API key (starts with AIza).';
+            errorBox.style.display = 'block';
+            return;
         }
 
-        async function generateQuestions() {
-            console.log('generateQuestions entered');
-            const file = document.getElementById('pdf-file-input').files[0];
-            const key = document.getElementById('api-key-input').value.trim();
-            const count = parseInt(document.getElementById('gen-count').value);
-            const statusEl = document.getElementById('status-message');
-            const errorBox = document.getElementById('error-box');
+        statusEl.textContent = '⏳ Waiting for PDF.js library...';
+        statusEl.style.display = 'block';
 
-            statusEl.textContent = 'Starting...';
-            errorBox.style.display = 'none';
+        // Wait for pdfjsLib to be ready
+        const loaded = await waitForPdfJs();
+        if (!loaded) {
+            errorBox.textContent = '❌ PDF.js library still not loaded after 5 seconds. Check your internet or open an incognito tab and try again.';
+            errorBox.style.display = 'block';
+            statusEl.style.display = 'none';
+            return;
+        }
 
-            // Basic checks
-            if (!file) { errorBox.textContent = '❌ Please select a PDF.'; errorBox.style.display='block'; return; }
-            if (!key || !key.startsWith('AIza')) { errorBox.textContent = '❌ API key must start with AIza. Get one at https://aistudio.google.com/apikey'; errorBox.style.display='block'; return; }
-
-            try {
-                // Check PDF.js
-                if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js library not loaded. Check internet connection or try a different browser.');
-
-                statusEl.textContent = 'Reading PDF...';
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                let text = '';
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const content = await page.getTextContent();
-                    text += content.items.map(it => it.str).join(' ') + ' ';
-                }
-                if (text.trim().length < 50) throw new Error('Not enough text in PDF. It may contain only images.');
-
-                statusEl.textContent = `Extracted ${text.length} chars. Calling Gemini...`;
-                const prompt = `Generate ${count} NBOME-style MCQs from this text. Return JSON array: [{"text":"...","options":["A","B","C","D"],"correctAnswer":"A","explanation":"...","category":"cardio"}]`.slice(0, 15000);
-                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-
-                if (!resp.ok) {
-                    const err = await resp.json().catch(()=>({}));
-                    throw new Error(`API error ${resp.status}: ${err.error?.message || 'Unknown error'}`);
-                }
-
-                const data = await resp.json();
-                const raw = data.candidates[0].content.parts[0].text;
-                const clean = raw.replace(/```json|```/g, '').trim();
-                const questions = JSON.parse(clean);
-                statusEl.textContent = `✅ Generated ${questions.length} questions! Check console for details.`;
-                console.log('Questions:', questions);
-                // Optionally save them here
-            } catch (err) {
-                errorBox.textContent = '❌ ' + err.message;
-                errorBox.style.display = 'block';
-                console.error(err);
+        try {
+            statusEl.textContent = '📖 Reading PDF...';
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let text = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(it => it.str).join(' ') + ' ';
             }
+            if (text.trim().length < 50) {
+                throw new Error('Could not extract enough text. The PDF may be image‑based.');
+            }
+
+            statusEl.textContent = `📝 Extracted ${text.length} characters. Calling Gemini...`;
+            const prompt = `You are an NBOME question writer. Based on the following medical text, generate ${count} multiple-choice questions. Return ONLY a JSON array: [{"text":"...","options":["A","B","C","D","E"],"correctAnswer":"A","explanation":"...","category":"one of: cardio,resp,gi,neuro,msk,endo,heme,id,repro,renal,general"}]. Text:\n${text.slice(0, 15000)}`;
+
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+                })
+            });
+
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(`API error ${resp.status}: ${errData.error?.message || 'Unknown'}`);
+            }
+
+            const data = await resp.json();
+            const raw = data.candidates[0].content.parts[0].text;
+            const clean = raw.replace(/```json|```/g, '').trim();
+            const questions = JSON.parse(clean);
+
+            if (!Array.isArray(questions) || questions.length === 0) {
+                throw new Error('AI did not return any questions. The text may not contain enough medical content.');
+            }
+
+            statusEl.textContent = `✅ Successfully generated ${questions.length} questions!`;
+            console.log('Generated questions:', questions);
+            // Here you can save them to localStorage etc.
+        } catch (err) {
+            errorBox.textContent = '❌ ' + err.message;
+            errorBox.style.display = 'block';
+            statusEl.style.display = 'none';
         }
-    </script>
+    }
+</script>
 </body>
 </html>
