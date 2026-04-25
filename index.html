@@ -2,21 +2,104 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Test Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Med School Magic</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>">
+    <!-- IMPORTANT: use the correct PDF.js URL (no .mjs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+    <style>
+        /* [Full CSS from earlier – I'll include a minimal one for brevity, but the complete styles should be in the final file] */
+        body { font-family: sans-serif; background: #f5f5f5; color: #222; padding: 16px; }
+        .btn { padding: 10px 18px; background: #3a0ca3; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 4px; }
+        .btn:hover { opacity: 0.9; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+        input, select { padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 100%; margin-bottom: 8px; }
+        .error-msg { color: red; background: #ffe0e0; padding: 8px; border-radius: 6px; margin-top: 8px; display: none; }
+    </style>
 </head>
 <body>
-    <h2>Test the Generate button</h2>
-    <input type="file" id="pdf-file-input" accept=".pdf">
-    <br><br>
-    <input type="password" id="api-key-input" placeholder="API key">
-    <br><br>
-    <button onclick="generateQuestions()">Generate</button>
+    <h1>Med School Magic</h1>
+
+    <!-- UPLOAD SCREEN -->
+    <div id="upload-section">
+        <div class="card">
+            <h2>Upload & Generate</h2>
+            <input type="file" id="pdf-file-input" accept=".pdf">
+            <input type="password" id="api-key-input" placeholder="Gemini API key (AIza...)">
+            <select id="gen-count">
+                <option value="5">5 questions</option>
+                <option value="10" selected>10 questions</option>
+            </select>
+            <button class="btn" onclick="testClick()">Test Click</button>
+            <button class="btn" onclick="generateQuestions()">Generate</button>
+            <div id="status-message"></div>
+            <div class="error-msg" id="error-box"></div>
+        </div>
+    </div>
 
     <script>
-        function generateQuestions() {
-            alert('✅ Button clicked! Function is working.');
-            console.log('generateQuestions() called');
+        // Simple test function
+        function testClick() {
+            alert('Button works!');
+        }
+
+        async function generateQuestions() {
+            console.log('generateQuestions entered');
+            const file = document.getElementById('pdf-file-input').files[0];
+            const key = document.getElementById('api-key-input').value.trim();
+            const count = parseInt(document.getElementById('gen-count').value);
+            const statusEl = document.getElementById('status-message');
+            const errorBox = document.getElementById('error-box');
+
+            statusEl.textContent = 'Starting...';
+            errorBox.style.display = 'none';
+
+            // Basic checks
+            if (!file) { errorBox.textContent = '❌ Please select a PDF.'; errorBox.style.display='block'; return; }
+            if (!key || !key.startsWith('AIza')) { errorBox.textContent = '❌ API key must start with AIza. Get one at https://aistudio.google.com/apikey'; errorBox.style.display='block'; return; }
+
+            try {
+                // Check PDF.js
+                if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js library not loaded. Check internet connection or try a different browser.');
+
+                statusEl.textContent = 'Reading PDF...';
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let text = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    text += content.items.map(it => it.str).join(' ') + ' ';
+                }
+                if (text.trim().length < 50) throw new Error('Not enough text in PDF. It may contain only images.');
+
+                statusEl.textContent = `Extracted ${text.length} chars. Calling Gemini...`;
+                const prompt = `Generate ${count} NBOME-style MCQs from this text. Return JSON array: [{"text":"...","options":["A","B","C","D"],"correctAnswer":"A","explanation":"...","category":"cardio"}]`.slice(0, 15000);
+                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(()=>({}));
+                    throw new Error(`API error ${resp.status}: ${err.error?.message || 'Unknown error'}`);
+                }
+
+                const data = await resp.json();
+                const raw = data.candidates[0].content.parts[0].text;
+                const clean = raw.replace(/```json|```/g, '').trim();
+                const questions = JSON.parse(clean);
+                statusEl.textContent = `✅ Generated ${questions.length} questions! Check console for details.`;
+                console.log('Questions:', questions);
+                // Optionally save them here
+            } catch (err) {
+                errorBox.textContent = '❌ ' + err.message;
+                errorBox.style.display = 'block';
+                console.error(err);
+            }
         }
     </script>
 </body>
