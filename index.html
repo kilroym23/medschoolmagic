@@ -7,7 +7,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs"></script>
+    <!-- Fixed: use the standard UMD build of PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
     <style>
         :root {
             --bg: #f5f3ef;
@@ -83,20 +84,469 @@
     </style>
 </head>
 <body>
-    <div class="app">
-        <header>
-            <div class="logo">Med School <span>Magic</span></div>
-            <div id="header-actions"></div>
-        </header>
-        <!-- Screens: login, dashboard, upload, study, manage, analytics (same structure as original, but I'll include a compact version with full JS functionality) -->
-        <div class="screen active" id="screen-login">...</div>
-        <!-- ... [The rest of the screens and the complete JavaScript from the earlier full-featured version go here] -->
-        <!-- For brevity in this response, I'll indicate that the full code is in the final file; the user will copy the whole block I provide. -->
+<div class="app">
+    <header>
+        <div class="logo">Med School <span>Magic</span></div>
+        <div id="header-actions"></div>
+    </header>
+
+    <!-- Login Screen -->
+    <div class="screen active" id="screen-login">
+        <div class="card" style="max-width:400px;margin:40px auto;">
+            <h2>👋 Welcome</h2>
+            <p style="font-size:0.9rem;color:var(--text2);margin-bottom:20px;">Free NBOME prep. No account needed – just pick a username.</p>
+            <input type="text" id="login-username" placeholder="Username" style="margin-bottom:10px;">
+            <button class="btn btn-primary" style="width:100%;" onclick="handleLogin()">Enter</button>
+        </div>
     </div>
-    <script>
-        // Full JavaScript logic (identical to the previous comprehensive version)
-        // (Question bank, Gemini API, NBOME categories, highlighting, strikethrough, analytics, etc.)
-        // I will embed the entire script in the final downloadable code.
-    </script>
+
+    <!-- Dashboard -->
+    <div class="screen" id="screen-dashboard">
+        <div class="grid-2" style="margin-bottom:16px;">
+            <div class="stat-card"><div class="stat-value" id="stat-total-q">0</div><div class="stat-label">Total Questions</div></div>
+            <div class="stat-card"><div class="stat-value" id="stat-overall-pct">--</div><div class="stat-label">Overall % Correct</div></div>
+        </div>
+        <div class="grid-2">
+            <div class="card" onclick="showScreen('upload')" style="cursor:pointer;"><h3>📄 Upload & Generate</h3><p style="font-size:0.8rem;color:var(--text2);">AI creates questions from your PDF (needs free API key)</p></div>
+            <div class="card" onclick="startStudy()" style="cursor:pointer;"><h3>🧠 Start Study Block</h3><p style="font-size:0.8rem;color:var(--text2);">Timed 40‑question blocks</p></div>
+        </div>
+        <div style="margin-top:16px;"><div class="card" onclick="showScreen('manage')" style="cursor:pointer;"><h3>🗂️ Manage Questions</h3></div></div>
+        <div class="card" onclick="showScreen('analytics')" style="cursor:pointer;"><h3>📊 Analytics</h3></div>
+        <div class="card" style="margin-top:16px;">
+            <p style="font-size:0.8rem;">💡 <b>No API key?</b> Click below to load a sample question bank.</p>
+            <button class="btn" onclick="loadDemoQuestions()">Load Demo Questions</button>
+        </div>
+    </div>
+
+    <!-- Upload Screen -->
+    <div class="screen" id="screen-upload">
+        <button class="btn btn-sm" onclick="showScreen('dashboard')" style="margin-bottom:10px;">← Back</button>
+        <div class="card">
+            <h2>📄 Upload & Generate Questions</h2>
+            <input type="file" id="pdf-file-input" accept=".pdf" style="margin:10px 0;">
+            <label>Questions to generate</label>
+            <select id="gen-count"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option></select>
+            <label style="margin-top:10px;">Gemini API Key <span style="font-size:0.7rem;">(<a href="https://aistudio.google.com/apikey" target="_blank">get free key</a>)</span></label>
+            <input type="password" id="api-key-input" placeholder="AIza...">
+            <button class="btn btn-primary" onclick="generateQuestions()" style="margin-top:10px;">Generate</button>
+            <div id="upload-status" style="font-size:0.8rem;margin-top:8px;"></div>
+            <div id="upload-progress" style="display:none;"><div class="progress-bar"><div class="progress-fill" id="upload-progress-fill" style="width:0%;"></div></div></div>
+        </div>
+        <div class="card" id="generated-preview" style="display:none;">
+            <h3>✅ Generated Questions</h3>
+            <div id="gen-preview-list"></div>
+            <button class="btn btn-primary" onclick="saveGeneratedToDb()">Save to Database</button>
+        </div>
+    </div>
+
+    <!-- Study Screen -->
+    <div class="screen" id="screen-study">
+        <button class="btn btn-sm" onclick="showScreen('dashboard')" style="margin-bottom:10px;">← Back</button>
+        <div id="study-setup" class="card">
+            <h2>Study Setup</h2>
+            <label>Mode</label>
+            <select id="study-mode"><option value="tutor">Tutor (feedback per question)</option><option value="timed">Timed</option></select>
+            <div style="margin-top:10px;">
+                <label>Categories</label>
+                <div id="category-filter" style="max-height:150px;overflow-y:auto;border:1px solid var(--border);padding:8px;border-radius:8px;"></div>
+            </div>
+            <button class="btn btn-primary" onclick="beginStudyBlock()" style="margin-top:10px;">Begin Block</button>
+        </div>
+        <div id="study-active" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span id="q-progress"></span>
+                <span class="timer" id="block-timer">00:00</span>
+            </div>
+            <div class="question-stem" id="question-stem"></div>
+            <div id="answer-choices"></div>
+            <div id="explanation-area" class="card" style="display:none;margin-top:10px;"></div>
+            <div style="display:flex;gap:10px;margin-top:10px;">
+                <span style="font-size:0.8rem;">Highlight: </span>
+                <span class="highlight-dot" style="background:#fef08a;display:inline-block;width:20px;height:20px;border-radius:50%;cursor:pointer;" onclick="setHighlightColor('yellow')"></span>
+                <span class="highlight-dot" style="background:#bfdbfe;display:inline-block;width:20px;height:20px;border-radius:50%;cursor:pointer;" onclick="setHighlightColor('blue')"></span>
+                <span class="highlight-dot" style="background:#bbf7d0;display:inline-block;width:20px;height:20px;border-radius:50%;cursor:pointer;" onclick="setHighlightColor('green')"></span>
+                <span class="highlight-dot" style="background:#fbcfe8;display:inline-block;width:20px;height:20px;border-radius:50%;cursor:pointer;" onclick="setHighlightColor('pink')"></span>
+            </div>
+            <button class="btn btn-primary" id="btn-next" onclick="nextQuestion()" style="display:none;margin-top:10px;">Next →</button>
+            <div class="question-nav" id="question-nav-dots"></div>
+        </div>
+        <div id="study-results" style="display:none;" class="card">
+            <div class="score-ring" id="result-ring">--</div>
+            <p id="result-summary" style="text-align:center;margin-top:10px;"></p>
+            <button class="btn btn-primary" onclick="retryMissed()" style="margin-top:10px;">Retry Missed</button>
+            <button class="btn" onclick="showScreen('dashboard')" style="margin-top:10px;">Done</button>
+        </div>
+    </div>
+
+    <!-- Manage Screen -->
+    <div class="screen" id="screen-manage">
+        <button class="btn btn-sm" onclick="showScreen('dashboard')" style="margin-bottom:10px;">← Back</button>
+        <div class="card">
+            <h2>Question Manager</h2>
+            <div style="display:flex;gap:10px;margin-bottom:10px;">
+                <select id="manage-filter-cat" onchange="renderManageList()"><option value="all">All Categories</option></select>
+                <select id="manage-filter-pdf" onchange="renderManageList()"><option value="all">All PDFs</option></select>
+            </div>
+            <div id="manage-list" style="max-height:400px;overflow-y:auto;"></div>
+            <button class="btn btn-danger" onclick="deleteSelected()">Delete Selected</button>
+        </div>
+    </div>
+
+    <!-- Analytics Screen -->
+    <div class="screen" id="screen-analytics">
+        <button class="btn btn-sm" onclick="showScreen('dashboard')" style="margin-bottom:10px;">← Back</button>
+        <div class="card"><h2>📊 Performance by Category</h2><div id="analytics-content"></div></div>
+    </div>
+</div>
+
+<script>
+    // ==================== STORAGE ====================
+    const DB_PREFIX = 'medmagic_';
+    function dbGet(k) { try { return JSON.parse(localStorage.getItem(DB_PREFIX + k)); } catch { return null; } }
+    function dbSet(k, v) { localStorage.setItem(DB_PREFIX + k, JSON.stringify(v)); }
+    function dbDel(k) { localStorage.removeItem(DB_PREFIX + k); }
+
+    const NBOME_CATEGORIES = [
+        {id:'opp', name:'OPP/OMM'},{id:'cardio', name:'Cardiovascular'},{id:'resp', name:'Respiratory'},
+        {id:'gi', name:'Gastrointestinal'},{id:'renal', name:'Renal & Urinary'},{id:'repro', name:'Reproductive'},
+        {id:'endo', name:'Endocrine'},{id:'neuro', name:'Neuro & Mental'},{id:'msk', name:'Musculoskeletal'},
+        {id:'heme', name:'Hematologic'},{id:'derm', name:'Dermatology'},{id:'id', name:'Infectious Disease'},
+        {id:'peds', name:'Pediatrics'},{id:'geri', name:'Geriatrics'},{id:'pharm', name:'Pharmacology'},
+        {id:'behav', name:'Behavioral'},{id:'ethics', name:'Ethics & Legal'},{id:'biostat', name:'Biostatistics'},
+        {id:'general', name:'General'}
+    ];
+
+    let currentUser = null;
+    let studyBlock = null;
+    let generatedQuestions = [];
+    let highlightColor = 'yellow';
+
+    function showScreen(name) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        let screen = document.getElementById('screen-' + name);
+        if (screen) screen.classList.add('active');
+        if (name === 'dashboard') refreshDashboard();
+        if (name === 'manage') refreshManageScreen();
+        if (name === 'analytics') refreshAnalytics();
+        if (name === 'study') refreshStudySetup();
+    }
+
+    function handleLogin() {
+        let u = document.getElementById('login-username').value.trim();
+        if (!u) return alert('Enter a username.');
+        currentUser = u;
+        document.getElementById('header-actions').innerHTML = `<span>👤 ${u}</span><button class="btn btn-sm" onclick="logout()">Logout</button>`;
+        showScreen('dashboard');
+    }
+
+    function logout() {
+        currentUser = null;
+        document.getElementById('header-actions').innerHTML = '';
+        showScreen('login');
+    }
+
+    function refreshDashboard() {
+        let all = getAllQuestions();
+        document.getElementById('stat-total-q').textContent = Object.keys(all).length;
+        let stats = getUserStats();
+        if (stats.totalAttempted) document.getElementById('stat-overall-pct').textContent = Math.round(stats.totalCorrect / stats.totalAttempted * 100) + '%';
+    }
+
+    // Question DB
+    function getAllQuestions() { return dbGet('questions') || {}; }
+    function saveAllQuestions(q) { dbSet('questions', q); }
+    function addQuestion(q) {
+        let all = getAllQuestions();
+        let id = 'q_' + Date.now();
+        q.id = id; q.contributor = currentUser; q.createdAt = Date.now();
+        all[id] = q;
+        saveAllQuestions(all);
+    }
+    function deleteQuestions(ids) {
+        let all = getAllQuestions();
+        ids.forEach(id => delete all[id]);
+        saveAllQuestions(all);
+    }
+
+    // User stats
+    function getUserStats() {
+        if (!currentUser) return {totalCorrect:0, totalAttempted:0, categoryStats:{}};
+        let key = 'stats_' + currentUser;
+        return dbGet(key) || {totalCorrect:0, totalAttempted:0, categoryStats:{}};
+    }
+    function saveUserStats(stats) {
+        if (!currentUser) return;
+        dbSet('stats_' + currentUser, stats);
+    }
+
+    // Study setup
+    function refreshStudySetup() {
+        let filter = document.getElementById('category-filter');
+        filter.innerHTML = NBOME_CATEGORIES.map(c => `<label><input type="checkbox" value="${c.id}" checked> ${c.name}</label><br>`).join('');
+    }
+
+    function beginStudyBlock() {
+        let selectedCats = [...document.querySelectorAll('#category-filter input:checked')].map(el => el.value);
+        let all = getAllQuestions();
+        let pool = Object.entries(all).filter(([id,q]) => selectedCats.includes(q.category) || selectedCats.length === 0);
+        if (pool.length === 0) return alert('No questions. Load demo questions or upload a PDF.');
+        let mode = document.getElementById('study-mode').value;
+        let blockSize = Math.min(pool.length, 40);
+        let shuffled = pool.sort(() => Math.random() - 0.5).slice(0, blockSize).map(([id]) => id);
+        studyBlock = {
+            questionIds: shuffled,
+            currentIndex: 0,
+            mode: mode,
+            answers: {},
+            confidences: {},
+            startTime: Date.now(),
+            timer: null,
+            elapsed: 0
+        };
+        document.getElementById('study-setup').style.display = 'none';
+        document.getElementById('study-active').style.display = 'block';
+        document.getElementById('study-results').style.display = 'none';
+        if (mode === 'timed') startTimer();
+        renderQuestion();
+    }
+
+    function startTimer() {
+        studyBlock.timer = setInterval(() => {
+            studyBlock.elapsed++;
+            let m = Math.floor(studyBlock.elapsed/60), s = studyBlock.elapsed%60;
+            document.getElementById('block-timer').textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        }, 1000);
+    }
+
+    function renderQuestion() {
+        if (studyBlock.currentIndex >= studyBlock.questionIds.length) return finishBlock();
+        let qid = studyBlock.questionIds[studyBlock.currentIndex];
+        let q = getAllQuestions()[qid];
+        if (!q) return nextQuestion();
+        document.getElementById('q-progress').textContent = `Q ${studyBlock.currentIndex+1}/${studyBlock.questionIds.length}`;
+        document.getElementById('question-stem').innerHTML = q.text;
+        let choices = document.getElementById('answer-choices');
+        let letters = ['A','B','C','D','E','F','G'];
+        let userAns = studyBlock.answers[qid];
+        choices.innerHTML = q.options.map((opt,i) => {
+            let cls = 'answer-choice';
+            if (userAns !== undefined) {
+                if (letters[i] === q.correctAnswer) cls += ' correct';
+                else if (letters[i] === userAns) cls += ' incorrect';
+            }
+            return `<div class="${cls} choice-${i}" onclick="${userAns === undefined ? `selectAnswer('${qid}', '${letters[i]}')` : ''}">
+                <span class="choice-letter">${letters[i]}</span>
+                <span class="choice-text">${opt}</span>
+                <span class="strike-btn" onclick="event.stopPropagation();document.querySelector('.choice-${i}').classList.toggle('strikethrough')">✕</span>
+            </div>`;
+        }).join('');
+        document.getElementById('btn-next').style.display = userAns !== undefined ? 'block' : 'none';
+        if (userAns !== undefined && studyBlock.mode === 'tutor') showExplanation(qid);
+    }
+
+    function selectAnswer(qid, answer) {
+        if (studyBlock.answers[qid] !== undefined) return;
+        studyBlock.answers[qid] = answer;
+        let q = getAllQuestions()[qid];
+        let stats = getUserStats();
+        stats.totalAttempted++;
+        if (answer === q.correctAnswer) stats.totalCorrect++;
+        let cat = q.category || 'general';
+        if (!stats.categoryStats[cat]) stats.categoryStats[cat] = {correct:0, attempted:0};
+        stats.categoryStats[cat].attempted++;
+        if (answer === q.correctAnswer) stats.categoryStats[cat].correct++;
+        saveUserStats(stats);
+        if (studyBlock.mode === 'tutor') showExplanation(qid);
+        renderQuestion();
+    }
+
+    function showExplanation(qid) {
+        let q = getAllQuestions()[qid], ua = studyBlock.answers[qid];
+        document.getElementById('explanation-area').style.display = 'block';
+        document.getElementById('explanation-area').innerHTML = `<b>${ua===q.correctAnswer ? '✅ Correct' : '❌ Incorrect. Correct: ' + q.correctAnswer}</b><br>${q.explanation || ''}`;
+    }
+
+    function nextQuestion() { studyBlock.currentIndex++; renderQuestion(); }
+    function finishBlock() {
+        clearInterval(studyBlock.timer);
+        let correct = 0;
+        studyBlock.questionIds.forEach(qid => {
+            let q = getAllQuestions()[qid];
+            if (q && studyBlock.answers[qid] === q.correctAnswer) correct++;
+        });
+        let pct = Math.round(correct / studyBlock.questionIds.length * 100);
+        document.getElementById('study-active').style.display = 'none';
+        document.getElementById('study-results').style.display = 'block';
+        let ring = document.getElementById('result-ring');
+        ring.textContent = pct + '%';
+        ring.className = 'score-ring ' + (pct >= 70 ? 'good' : pct >= 50 ? 'ok' : 'poor');
+        document.getElementById('result-summary').textContent = `${correct} / ${studyBlock.questionIds.length}`;
+    }
+
+    function retryMissed() {
+        let missed = studyBlock.questionIds.filter(qid => {
+            let q = getAllQuestions()[qid];
+            return q && studyBlock.answers[qid] !== q.correctAnswer;
+        });
+        if (missed.length === 0) return alert('Perfect!');
+        studyBlock.questionIds = missed;
+        studyBlock.currentIndex = 0;
+        studyBlock.answers = {};
+        document.getElementById('study-results').style.display = 'none';
+        document.getElementById('study-active').style.display = 'block';
+        renderQuestion();
+    }
+
+    function setHighlightColor(c) { highlightColor = c; }
+    document.addEventListener('mouseup', () => {
+        let sel = window.getSelection();
+        if (!sel.toString().trim() || !highlightColor) return;
+        let range = sel.getRangeAt(0);
+        let span = document.createElement('span');
+        span.className = 'highlight-' + highlightColor;
+        range.surroundContents(span);
+    });
+
+    // Manage screen
+    function refreshManageScreen() {
+        let catSel = document.getElementById('manage-filter-cat');
+        catSel.innerHTML = '<option value="all">All</option>' + NBOME_CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        let pdfSel = document.getElementById('manage-filter-pdf');
+        let pdfs = new Set(Object.values(getAllQuestions()).map(q => q.sourcePdf).filter(Boolean));
+        pdfSel.innerHTML = '<option value="all">All PDFs</option>' + [...pdfs].map(p => `<option>${p}</option>`).join('');
+        renderManageList();
+    }
+
+    function renderManageList() {
+        let cat = document.getElementById('manage-filter-cat').value;
+        let pdf = document.getElementById('manage-filter-pdf').value;
+        let all = getAllQuestions();
+        let filtered = Object.entries(all).filter(([id,q]) => {
+            return (cat === 'all' || q.category === cat) && (pdf === 'all' || q.sourcePdf === pdf);
+        });
+        document.getElementById('manage-list').innerHTML = filtered.map(([id,q]) => {
+            return `<div><input type="checkbox" value="${id}" class="manage-check"> <span>${q.text.slice(0,80)}...</span> (${q.category})</div>`;
+        }).join('');
+    }
+
+    function deleteSelected() {
+        let selected = [...document.querySelectorAll('.manage-check:checked')].map(cb => cb.value);
+        if (selected.length === 0) return alert('Select questions to delete.');
+        deleteQuestions(selected);
+        refreshManageScreen();
+    }
+
+    function refreshAnalytics() {
+        let stats = getUserStats();
+        let list = document.getElementById('analytics-content');
+        list.innerHTML = Object.entries(stats.categoryStats || {}).map(([cat, s]) => {
+            return `<div><b>${cat}</b>: ${s.correct}/${s.attempted} (${Math.round(s.correct/s.attempted*100)}%)</div>`;
+        }).join('') || '<p>No data yet. Start a study block!</p>';
+    }
+
+    // ==================== DEMO QUESTIONS (no API key needed) ====================
+    function loadDemoQuestions() {
+        const demoQs = [
+            {
+                text: "A 45-year-old woman presents with crushing substernal chest pain radiating to the left arm. ECG shows ST-segment elevations in leads II, III, and aVF. What is the most likely diagnosis?",
+                options: ["Anterior MI", "Inferior MI", "Lateral MI", "Pericarditis", "Costochondritis"],
+                correctAnswer: "B",
+                explanation: "ST elevations in II, III, aVF indicate an inferior wall MI, usually due to right coronary artery occlusion.",
+                category: "cardio"
+            },
+            {
+                text: "A 30-year-old man develops severe headache and neck stiffness. Lumbar puncture reveals cloudy CSF with elevated neutrophils and low glucose. Gram stain shows gram-negative diplococci. What is the causative organism?",
+                options: ["Streptococcus pneumoniae", "Neisseria meningitidis", "Haemophilus influenzae", "Listeria monocytogenes", "Cryptococcus neoformans"],
+                correctAnswer: "B",
+                explanation: "Gram-negative diplococci in CSF with neutrophilic pleocytosis and low glucose is classic for bacterial meningitis caused by N. meningitidis.",
+                category: "id"
+            },
+            {
+                text: "A 65-year-old smoker presents with progressive dyspnea and barrel-shaped chest. CXR shows hyperinflation and flattened diaphragms. What is the primary pathophysiologic process?",
+                options: ["Bronchoconstriction", "Loss of elastic recoil", "Mucus plugging", "Pulmonary edema", "Pleural effusion"],
+                correctAnswer: "B",
+                explanation: "Emphysema is characterized by destruction of alveolar walls and loss of elastic recoil, leading to air trapping and hyperinflation.",
+                category: "resp"
+            },
+            {
+                text: "A 20-year-old woman has cyclic pelvic pain, dysmenorrhea, and infertility. Laparoscopy reveals endometrial tissue on the ovaries and uterosacral ligaments. What is the most likely diagnosis?",
+                options: ["Uterine fibroids", "Endometriosis", "Pelvic inflammatory disease", "Ovarian cyst", "Ectopic pregnancy"],
+                correctAnswer: "B",
+                explanation: "Endometriosis is the presence of functional endometrial tissue outside the uterus, causing pain and infertility.",
+                category: "repro"
+            },
+            {
+                text: "A 55-year-old man with diabetes has a non-healing foot ulcer. Physical exam shows loss of sensation in a stocking-glove distribution. What is the most likely underlying complication?",
+                options: ["Peripheral arterial disease", "Diabetic neuropathy", "Osteomyelitis", "Cellulitis", "Venous insufficiency"],
+                correctAnswer: "B",
+                explanation: "Stocking-glove sensory loss is characteristic of diabetic peripheral neuropathy, which predisposes to foot ulcers.",
+                category: "endo"
+            }
+        ];
+        demoQs.forEach(q => addQuestion({...q, sourcePdf: "Demo Bank"}));
+        alert('Demo questions loaded! You can now start a study block.');
+        refreshDashboard();
+    }
+
+    // ==================== PDF & Gemini (FIXED) ====================
+    async function generateQuestions() {
+        let file = document.getElementById('pdf-file-input').files[0];
+        let key = document.getElementById('api-key-input').value.trim();
+        let count = parseInt(document.getElementById('gen-count').value);
+        if (!file) return alert('Please select a PDF file.');
+        if (!key) return alert('Please enter your free Gemini API key. Get one at https://aistudio.google.com/apikey');
+        let btn = document.getElementById('btn-generate');
+        btn.disabled = true;
+        document.getElementById('upload-status').textContent = '';
+        document.getElementById('upload-progress').style.display = 'block';
+        document.getElementById('upload-progress-fill').style.width = '10%';
+        try {
+            // Use pdfjsLib (now available globally thanks to the UMD build)
+            let buf = await file.arrayBuffer();
+            let pdf = await pdfjsLib.getDocument({data: buf}).promise;
+            let text = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                document.getElementById('upload-progress-fill').style.width = (10 + (i/pdf.numPages)*30) + '%';
+                let page = await pdf.getPage(i);
+                let content = await page.getTextContent();
+                text += content.items.map(it => it.str).join(' ') + '\n';
+            }
+            document.getElementById('upload-progress-fill').style.width = '50%';
+            let prompt = `Generate ${count} NBOME-style multiple-choice questions from this text. Return only a JSON array: [{"text":"question stem","options":["A","B","C","D","E"],"correctAnswer":"A","explanation":"...","category":"one of: ${NBOME_CATEGORIES.map(c=>c.id).join(',')}"}]. Text: ${text.slice(0,10000)}`;
+            let resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{temperature:0.7}})
+            });
+            if (!resp.ok) throw new Error('API error: ' + resp.status);
+            let data = await resp.json();
+            let raw = data.candidates[0].content.parts[0].text;
+            // clean json
+            let json = raw.replace(/```json|```/g, '').trim();
+            generatedQuestions = JSON.parse(json);
+            if (!Array.isArray(generatedQuestions)) throw new Error('Invalid response format');
+
+            let preview = document.getElementById('gen-preview-list');
+            preview.innerHTML = generatedQuestions.map(q => `<div><b>${q.text.slice(0,60)}...</b> (${q.category})</div>`).join('');
+            document.getElementById('generated-preview').style.display = 'block';
+        } catch(e) {
+            alert('Error: ' + e.message);
+            console.error(e);
+        } finally {
+            btn.disabled = false;
+            document.getElementById('upload-progress').style.display = 'none';
+        }
+    }
+
+    function saveGeneratedToDb() {
+        generatedQuestions.forEach(q => addQuestion({...q, sourcePdf: document.getElementById('pdf-file-input').files[0]?.name}));
+        generatedQuestions = [];
+        document.getElementById('generated-preview').style.display = 'none';
+        refreshDashboard();
+    }
+
+    // ==================== INIT ====================
+    showScreen('login');
+</script>
 </body>
 </html>
