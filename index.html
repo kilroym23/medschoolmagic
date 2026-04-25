@@ -7,7 +7,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>">
-    <!-- Fixed: use the standard UMD build of PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
     <style>
         :root {
@@ -81,6 +80,7 @@
         .score-ring.good { border-color:var(--accent); color:var(--accent); }
         .score-ring.ok { border-color:#e67e22; color:#e67e22; }
         .score-ring.poor { border-color:var(--red); color:var(--red); }
+        .error-msg { color: var(--red); background: var(--red-light); padding: 8px; border-radius: 6px; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -128,9 +128,16 @@
             <select id="gen-count"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option></select>
             <label style="margin-top:10px;">Gemini API Key <span style="font-size:0.7rem;">(<a href="https://aistudio.google.com/apikey" target="_blank">get free key</a>)</span></label>
             <input type="password" id="api-key-input" placeholder="AIza...">
-            <button class="btn btn-primary" onclick="generateQuestions()" style="margin-top:10px;">Generate</button>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button class="btn btn-primary" onclick="generateQuestions()">Generate</button>
+                <button class="btn" onclick="testApiKey()">Test API Key</button>
+            </div>
             <div id="upload-status" style="font-size:0.8rem;margin-top:8px;"></div>
-            <div id="upload-progress" style="display:none;"><div class="progress-bar"><div class="progress-fill" id="upload-progress-fill" style="width:0%;"></div></div></div>
+            <div id="upload-progress" style="display:none;">
+                <div class="progress-bar"><div class="progress-fill" id="upload-progress-fill" style="width:0%;"></div></div>
+                <div id="progress-text" style="font-size:0.7rem;color:var(--text2);"></div>
+            </div>
+            <div id="upload-error" class="error-msg" style="display:none;"></div>
         </div>
         <div class="card" id="generated-preview" style="display:none;">
             <h3>✅ Generated Questions</h3>
@@ -444,102 +451,160 @@
         }).join('') || '<p>No data yet. Start a study block!</p>';
     }
 
-    // ==================== DEMO QUESTIONS (no API key needed) ====================
+    // ==================== DEMO QUESTIONS ====================
     function loadDemoQuestions() {
         const demoQs = [
-            {
-                text: "A 45-year-old woman presents with crushing substernal chest pain radiating to the left arm. ECG shows ST-segment elevations in leads II, III, and aVF. What is the most likely diagnosis?",
-                options: ["Anterior MI", "Inferior MI", "Lateral MI", "Pericarditis", "Costochondritis"],
-                correctAnswer: "B",
-                explanation: "ST elevations in II, III, aVF indicate an inferior wall MI, usually due to right coronary artery occlusion.",
-                category: "cardio"
-            },
-            {
-                text: "A 30-year-old man develops severe headache and neck stiffness. Lumbar puncture reveals cloudy CSF with elevated neutrophils and low glucose. Gram stain shows gram-negative diplococci. What is the causative organism?",
-                options: ["Streptococcus pneumoniae", "Neisseria meningitidis", "Haemophilus influenzae", "Listeria monocytogenes", "Cryptococcus neoformans"],
-                correctAnswer: "B",
-                explanation: "Gram-negative diplococci in CSF with neutrophilic pleocytosis and low glucose is classic for bacterial meningitis caused by N. meningitidis.",
-                category: "id"
-            },
-            {
-                text: "A 65-year-old smoker presents with progressive dyspnea and barrel-shaped chest. CXR shows hyperinflation and flattened diaphragms. What is the primary pathophysiologic process?",
-                options: ["Bronchoconstriction", "Loss of elastic recoil", "Mucus plugging", "Pulmonary edema", "Pleural effusion"],
-                correctAnswer: "B",
-                explanation: "Emphysema is characterized by destruction of alveolar walls and loss of elastic recoil, leading to air trapping and hyperinflation.",
-                category: "resp"
-            },
-            {
-                text: "A 20-year-old woman has cyclic pelvic pain, dysmenorrhea, and infertility. Laparoscopy reveals endometrial tissue on the ovaries and uterosacral ligaments. What is the most likely diagnosis?",
-                options: ["Uterine fibroids", "Endometriosis", "Pelvic inflammatory disease", "Ovarian cyst", "Ectopic pregnancy"],
-                correctAnswer: "B",
-                explanation: "Endometriosis is the presence of functional endometrial tissue outside the uterus, causing pain and infertility.",
-                category: "repro"
-            },
-            {
-                text: "A 55-year-old man with diabetes has a non-healing foot ulcer. Physical exam shows loss of sensation in a stocking-glove distribution. What is the most likely underlying complication?",
-                options: ["Peripheral arterial disease", "Diabetic neuropathy", "Osteomyelitis", "Cellulitis", "Venous insufficiency"],
-                correctAnswer: "B",
-                explanation: "Stocking-glove sensory loss is characteristic of diabetic peripheral neuropathy, which predisposes to foot ulcers.",
-                category: "endo"
-            }
+            { text: "A 45-year-old woman presents with crushing substernal chest pain radiating to the left arm. ECG shows ST-segment elevations in leads II, III, and aVF. What is the most likely diagnosis?", options: ["Anterior MI", "Inferior MI", "Lateral MI", "Pericarditis"], correctAnswer: "B", explanation: "ST elevations in II, III, aVF indicate inferior wall MI.", category: "cardio" },
+            { text: "A 30-year-old man develops severe headache and neck stiffness. LP reveals cloudy CSF with elevated neutrophils and low glucose. Gram stain shows gram-negative diplococci. What is the causative organism?", options: ["S. pneumoniae", "N. meningitidis", "H. influenzae", "L. monocytogenes"], correctAnswer: "B", explanation: "Gram-negative diplococci in CSF with neutrophilic pleocytosis is classic for meningococcal meningitis.", category: "id" },
+            { text: "A 65-year-old smoker presents with progressive dyspnea and barrel-shaped chest. CXR shows hyperinflation and flattened diaphragms. What is the primary pathophysiologic process?", options: ["Bronchoconstriction", "Loss of elastic recoil", "Mucus plugging", "Pulmonary edema"], correctAnswer: "B", explanation: "Emphysema is characterized by destruction of alveolar walls and loss of elastic recoil.", category: "resp" },
+            { text: "A 20-year-old woman has cyclic pelvic pain, dysmenorrhea, and infertility. Laparoscopy reveals endometrial tissue on the ovaries and uterosacral ligaments. Diagnosis?", options: ["Fibroids", "Endometriosis", "PID", "Ovarian cyst"], correctAnswer: "B", explanation: "Endometriosis = functional endometrial tissue outside uterus.", category: "repro" },
+            { text: "A 55-year-old diabetic has a non-healing foot ulcer and stocking-glove sensory loss. Most likely underlying complication?", options: ["PAD", "Diabetic neuropathy", "Osteomyelitis", "Cellulitis"], correctAnswer: "B", explanation: "Stocking-glove loss is characteristic of diabetic peripheral neuropathy.", category: "endo" }
         ];
         demoQs.forEach(q => addQuestion({...q, sourcePdf: "Demo Bank"}));
         alert('Demo questions loaded! You can now start a study block.');
         refreshDashboard();
     }
 
-    // ==================== PDF & Gemini (FIXED) ====================
+    // ==================== PDF & Gemini with detailed logging ====================
     async function generateQuestions() {
-        let file = document.getElementById('pdf-file-input').files[0];
-        let key = document.getElementById('api-key-input').value.trim();
-        let count = parseInt(document.getElementById('gen-count').value);
-        if (!file) return alert('Please select a PDF file.');
-        if (!key) return alert('Please enter your free Gemini API key. Get one at https://aistudio.google.com/apikey');
-        let btn = document.getElementById('btn-generate');
-        btn.disabled = true;
-        document.getElementById('upload-status').textContent = '';
-        document.getElementById('upload-progress').style.display = 'block';
-        document.getElementById('upload-progress-fill').style.width = '10%';
-        try {
-            // Use pdfjsLib (now available globally thanks to the UMD build)
-            let buf = await file.arrayBuffer();
-            let pdf = await pdfjsLib.getDocument({data: buf}).promise;
-            let text = '';
-            for (let i = 1; i <= pdf.numPages; i++) {
-                document.getElementById('upload-progress-fill').style.width = (10 + (i/pdf.numPages)*30) + '%';
-                let page = await pdf.getPage(i);
-                let content = await page.getTextContent();
-                text += content.items.map(it => it.str).join(' ') + '\n';
-            }
-            document.getElementById('upload-progress-fill').style.width = '50%';
-            let prompt = `Generate ${count} NBOME-style multiple-choice questions from this text. Return only a JSON array: [{"text":"question stem","options":["A","B","C","D","E"],"correctAnswer":"A","explanation":"...","category":"one of: ${NBOME_CATEGORIES.map(c=>c.id).join(',')}"}]. Text: ${text.slice(0,10000)}`;
-            let resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{temperature:0.7}})
-            });
-            if (!resp.ok) throw new Error('API error: ' + resp.status);
-            let data = await resp.json();
-            let raw = data.candidates[0].content.parts[0].text;
-            // clean json
-            let json = raw.replace(/```json|```/g, '').trim();
-            generatedQuestions = JSON.parse(json);
-            if (!Array.isArray(generatedQuestions)) throw new Error('Invalid response format');
+        console.log('🔵 generateQuestions() called');
+        const fileInput = document.getElementById('pdf-file-input');
+        const file = fileInput.files[0];
+        const key = document.getElementById('api-key-input').value.trim();
+        const count = parseInt(document.getElementById('gen-count').value);
 
-            let preview = document.getElementById('gen-preview-list');
+        const statusEl = document.getElementById('upload-status');
+        const progressEl = document.getElementById('upload-progress');
+        const progressFill = document.getElementById('upload-progress-fill');
+        const progressText = document.getElementById('progress-text');
+        const errorEl = document.getElementById('upload-error');
+        const btn = document.querySelector('button[onclick="generateQuestions()"]');
+
+        errorEl.style.display = 'none';
+        statusEl.textContent = '';
+
+        if (!file) {
+            errorEl.style.display = 'block';
+            errorEl.textContent = '❌ Please select a PDF file first.';
+            return;
+        }
+        if (!key) {
+            errorEl.style.display = 'block';
+            errorEl.textContent = '❌ Please enter your Gemini API key. Get one free at https://aistudio.google.com/apikey';
+            return;
+        }
+        if (!key.startsWith('AIza')) {
+            errorEl.style.display = 'block';
+            errorEl.textContent = '❌ API key should start with "AIza". Did you copy the full key?';
+            return;
+        }
+
+        btn.disabled = true;
+        progressEl.style.display = 'block';
+        progressFill.style.width = '5%';
+        progressText.textContent = 'Starting...';
+
+        try {
+            console.log('📄 Reading PDF...');
+            const buf = await file.arrayBuffer();
+            if (!window.pdfjsLib) throw new Error('PDF.js library not loaded. Check your internet connection.');
+            const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+            const totalPages = pdf.numPages;
+            console.log(`📑 PDF loaded, ${totalPages} pages`);
+            progressText.textContent = `Extracting text from ${totalPages} pages...`;
+
+            let allText = '';
+            for (let i = 1; i <= totalPages; i++) {
+                progressFill.style.width = (5 + (i / totalPages) * 25) + '%';
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                const pageText = content.items.map(it => it.str).join(' ');
+                allText += pageText + '\n';
+            }
+
+            if (allText.trim().length < 50) throw new Error('Could not extract enough text. The PDF may contain only images. Try a PDF with selectable text.');
+            console.log(`📝 Extracted ${allText.length} characters of text`);
+            progressFill.style.width = '40%';
+            progressText.textContent = 'Sending to Gemini AI...';
+
+            const prompt = `Generate ${count} high-quality NBOME-style multiple-choice questions from the following medical text. Return ONLY a JSON array like this: [{"text":"question stem","options":["A","B","C","D","E"],"correctAnswer":"A","explanation":"explanation","category":"one of the following: ${NBOME_CATEGORIES.map(c=>c.id).join(',')}"}]. Text: ${allText.slice(0, 15000)}`;
+            console.log('🤖 Calling Gemini...');
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+                })
+            });
+
+            console.log('📡 Response status:', resp.status);
+            if (!resp.ok) {
+                let errMsg = `HTTP ${resp.status}`;
+                try {
+                    const errData = await resp.json();
+                    errMsg += ': ' + (errData.error?.message || JSON.stringify(errData));
+                } catch {}
+                throw new Error('API call failed: ' + errMsg);
+            }
+
+            progressFill.style.width = '70%';
+            progressText.textContent = 'Parsing AI response...';
+            const data = await resp.json();
+            const raw = data.candidates[0].content.parts[0].text;
+            console.log('📦 Raw response length:', raw.length);
+            const jsonStr = raw.replace(/```json|```/g, '').trim();
+            let questions;
+            try {
+                questions = JSON.parse(jsonStr);
+            } catch (parseError) {
+                console.error('Invalid JSON:', jsonStr.slice(0, 300));
+                throw new Error('The AI returned an invalid response. Please try again.');
+            }
+            if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions were generated. The text may be too short or unrelated to medicine.');
+            console.log(`✅ Generated ${questions.length} questions`);
+            generatedQuestions = questions.map(q => ({...q, sourcePdf: file.name}));
+            const preview = document.getElementById('gen-preview-list');
             preview.innerHTML = generatedQuestions.map(q => `<div><b>${q.text.slice(0,60)}...</b> (${q.category})</div>`).join('');
             document.getElementById('generated-preview').style.display = 'block';
-        } catch(e) {
-            alert('Error: ' + e.message);
-            console.error(e);
+            progressFill.style.width = '100%';
+            progressText.textContent = 'Done!';
+            statusEl.textContent = `✅ Generated ${generatedQuestions.length} questions. Scroll down to review.`;
+        } catch (err) {
+            console.error('❌ Error:', err);
+            errorEl.style.display = 'block';
+            errorEl.textContent = '❌ ' + err.message;
+            statusEl.textContent = 'Generation failed.';
         } finally {
             btn.disabled = false;
-            document.getElementById('upload-progress').style.display = 'none';
+            progressEl.style.display = 'none';
+        }
+    }
+
+    async function testApiKey() {
+        const key = document.getElementById('api-key-input').value.trim();
+        const statusEl = document.getElementById('upload-status');
+        if (!key) return alert('Enter a key first.');
+        statusEl.textContent = 'Testing...';
+        try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with just the word "OK" if you can read this.' }] }] })
+            });
+            if (resp.ok) {
+                statusEl.textContent = '✅ API key is valid!';
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                statusEl.textContent = '❌ Invalid key or error: ' + (err.error?.message || resp.status);
+            }
+        } catch (e) {
+            statusEl.textContent = '❌ Network error: ' + e.message;
         }
     }
 
     function saveGeneratedToDb() {
-        generatedQuestions.forEach(q => addQuestion({...q, sourcePdf: document.getElementById('pdf-file-input').files[0]?.name}));
+        generatedQuestions.forEach(q => addQuestion({...q}));
         generatedQuestions = [];
         document.getElementById('generated-preview').style.display = 'none';
         refreshDashboard();
